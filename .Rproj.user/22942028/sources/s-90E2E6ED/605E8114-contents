@@ -1,0 +1,363 @@
+---
+title: "IS 6489 Final Project"
+author: "Sarah Bowers, Hansol Jeong, Mingyi Hu"
+date: "11/24/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Begin with loading packages, the Test, and the Train dataset. 
+
+```{r cars}
+library(tidyverse)
+library(magrittr)
+library(caret)
+library(car) 
+library(gpairs) 
+library(corrplot)
+library(gplots) 
+library(arm)
+library(broom) 
+library(leaps)
+library(readr)
+library(RColorBrewer)
+library(dplyr)
+library(ggrepel)
+library(gridExtra)
+library(MASS)
+library(missForest)
+
+train <- read.csv("train.csv", stringsAsFactors = FALSE)
+test <- read.csv("test.csv", stringsAsFactors = FALSE)
+
+test$SalePrice <- NA
+
+```
+
+
+#Imputing missing values
+
+```{r}
+ggplot(train, aes(x=GrLivArea, y=SalePrice)) + geom_point()
+
+
+```
+
+```{r}
+train <- train[-which(train$GrLivArea > 4000 & train$SalePrice < 3e+05), ]
+
+ggplot(train, aes(x=GrLivArea, y=SalePrice)) + geom_point()
+```
+
+
+```{r}
+all <- rbind(train, test)
+```
+
+
+
+We will impute the missing values with followings:
+
+1. In the categorical features, all NAs will be replaced by **'None'** because referring to the codebook, **'NA'**s are representing values such as 'No Garage' or 'No Access to Alley'.
+
+2. In the numeric features, all NAs will be replaced by 0. 
+
+3. Some catergorical features, such as Electrical, NAs will be replaced by the value that has the least frequently occuring value.
+```{r verify which columns contain NA values}
+coNA <- names(which(sapply(all, anyNA)))
+coNA
+length(coNA)
+sort(colSums(sapply(all[coNA], is.na)))
+
+```
+>Test dataset didn't have SalePrice column initially and we need to predict the empty column. Therefore, there are 34 columns with missing values in the allned dataset.
+
+
+```{r imputing missing values}
+#Change some NA values to None
+
+for (col in c("Alley", "PoolQC", "MiscFeature", "Fence", "FireplaceQu", "GarageType", 
+    "GarageFinish", "GarageQual", "GarageCond", "BsmtQual", "BsmtCond", 
+    "BsmtExposure", "BsmtFinType1", "BsmtFinType2", "MasVnrType")) {
+    all[is.na(all[,col]),col] <- "None"
+}
+
+#Change some NA values to 0
+#lotfrontage, bsmtfinsf1, bsmtfinsf2, bsmtunfsf, totalbsmtsf, bsmtfullbath, bsmthalfbath, garageyrblt, garagecars, garagearea,masvnrtype
+  
+for(x in c("GarageYrBlt", "GarageArea", "GarageCars", "BsmtFinSF1", 
+    "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF", "BsmtFullBath", "BsmtHalfBath", 
+    "MasVnrArea", "LotFrontage")){
+  all[is.na(all[,x]),x] = 0
+}
+
+#Replace missing MasVnrType
+all$MasVnrType[is.na(all$MasVnrType)] <- "BrkCmn"
+
+#Replace missing electrical
+all$Electrical[is.na(all$Electrical)] <- "Mix"
+
+#replace missing MSZoning
+all$MSZoning[is.na(all$MSZoning)] = "RL"
+
+#Replace missing utilities
+all$Utilities[is.na(all$Utilities)] = "AllPub"
+
+## Replace missing Functional values with 'Typ'
+all$Functional[is.na(all$Functional)] = "Typ"
+
+## Replace missing KitchenQual values by 'TA'
+all$KitchenQual[is.na(all$KitchenQual)] = "TA"
+
+## Replace missing SaleType values by 'WD'
+all$SaleType[is.na(all$SaleType)] = "WD"
+
+## Replace missing Exterior1st and Exterior2nd values by 'VinylSd'
+all$Exterior1st[is.na(all$Exterior1st)] = "VinylSd"
+all$Exterior2nd[is.na(all$Exterior2nd)] = "VinylSd"
+
+#Verify all NAs are gone.
+colSums(is.na(all))
+
+#Remvoe utilities as it has zero variance
+all = all[, -10]
+```
+
+##Change categorical values to numerics
+```{r}
+cols = c('FireplaceQu', 'BsmtQual', 'BsmtCond', 'GarageQual', 'GarageCond', 'ExterQual', 'ExterCond','HeatingQC', 'PoolQC', 'KitchenQual', 'BsmtFinType1', 'BsmtFinType2', 'Functional', 'Fence', 'BsmtExposure', 'GarageFinish', 'LandSlope','LotShape', 'PavedDrive', 'Street', 'Alley', 'CentralAir', 'MSSubClass', 'OverallCond', 'YrSold', 'MoSold')
+
+FireplaceQu=c('None','Po','Fa','TA','Gd','Ex')
+BsmtQual=c('None','Po','Fa','TA','Gd','Ex')
+BsmtCond=c('None','Po','Fa','TA','Gd','Ex')
+GarageQual=c('None','Po','Fa','TA','Gd','Ex')
+GarageCond=c('None','Po','Fa','TA','Gd','Ex')
+ExterQual=c('Po','Fa','TA','Gd','Ex')
+ExterCond=c('Po','Fa','TA','Gd','Ex')
+HeatingQC=c('Po','Fa','TA','Gd','Ex')
+PoolQC=c('None','Fa','TA','Gd','Ex')
+KitchenQual=c('Po','Fa','TA','Gd','Ex')
+BsmtFinType1=c('None','Unf','LwQ','Rec','BLQ','ALQ','GLQ')
+BsmtFinType2=c('None','Unf','LwQ','Rec','BLQ','ALQ','GLQ')
+Functional=c('Sal','Sev','Maj2','Maj1','Mod','Min2','Min1','Typ')
+Fence=c('None','MnWw','GdWo','MnPrv','GdPrv')
+BsmtExposure=c('None','No','Mn','Av','Gd')
+GarageFinish=c('None','Unf','RFn','Fin')
+LandSlope=c('Sev','Mod','Gtl')
+LotShape=c('IR3','IR2','IR1','Reg')
+PavedDrive=c('N','P','Y')
+Street=c('Pave','Grvl')
+Alley=c('None','Pave','Grvl')
+MSSubClass=c('20','30','40','45','50','60','70','75','80','85','90','120','150','160','180','190')
+OverallCond=NA
+MoSold=NA
+YrSold=NA
+CentralAir=NA
+levels=list(FireplaceQu, BsmtQual, BsmtCond, GarageQual, GarageCond, ExterQual, ExterCond,HeatingQC, PoolQC, KitchenQual, BsmtFinType1, BsmtFinType2, Functional, Fence, BsmtExposure, GarageFinish, LandSlope,LotShape, PavedDrive, Street, Alley, CentralAir, MSSubClass, OverallCond, YrSold, MoSold)
+i=1
+for (c in cols){
+        if(c=='CentralAir'|c=='OverallCond'|c=='YrSold'|c=='MoSold'){
+          all[,c]=as.numeric(factor(all[,c]))}
+        else
+          all[,c]=as.numeric(factor(all[,c],levels=levels[[i]]))
+        i=i+1
+        }
+```
+
+
+
+##Convert characters to numberics
+```{r}
+names(which(sapply(all, is.character)))
+
+
+all$MSZoning[all$MSZoning =="FV"] <- 5
+all$MSZoning[all$MSZoning =="RL"] <- 4
+all$MSZoning[all$MSZoning =="RM"] <- 3
+all$MSZoning[all$MSZoning=="RH"] <- 2
+all$MSZoning[all$MSZoning =="C (all)"] <- 1
+
+all$LandContour[all$LandContour =="Low"] <- 4
+all$LandContour[all$LandContour =="Bnk"] <- 3
+all$LandContour[all$LandContour =="HLS"] <- 2
+all$LandContour[all$LandContour =="Lvl"] <- 1
+
+all$LotConfig[all$LotConfig == 'Corner'] <- 1
+all$LotConfig[all$LotConfig == 'CulDSac'] <- 2
+all$LotConfig[all$LotConfig == 'FR2'] <- 3
+all$LotConfig[all$LotConfig == 'FR3'] <- 4
+all$LotConfig[all$LotConfig == 'Inside'] <- 5
+
+
+
+
+```
+
+
+##The most important categorical feature: Neighborhood
+```{r}
+spm1 <- ggplot(all[!is.na(all$SalePrice),], aes(reorder(Neighborhood, SalePrice, FUN=median), SalePrice)) +
+        geom_bar(stat='summary', fun.y = "median", fill='blue') + labs(x='Neighborhood', y='Median SalePrice') +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=50000)) +
+        geom_hline(aes(yintercept=median(all$SalePrice, na.rm=T)), color="red", linetype="dashed", size=1)
+```
+
+```{r}
+spm2 <- ggplot(all[!is.na(all$SalePrice),], aes(reorder(Neighborhood, SalePrice, FUN=mean), SalePrice)) +
+  geom_bar(stat="summary", fun.y="mean",fill="blue") +
+  labs(x="Neighborhood", y="Mean SalePrice") +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  scale_y_continuous(breaks=seq(0,800000,by=50000)) +
+  geom_hline(aes(yintercept=mean(all$SalePrice, na.rm=T)), color="red", linetype="dashed", size=1)
+```
+
+
+```{r}
+grid.arrange(spm1, spm2)
+```
+
+```{r}
+all$nrich[all$Neighborhood %in% c('StoneBr', 'NridgHt', 'NoRidge')] <- 2
+all$nrich[!all$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale', 'StoneBr', 'NridgHt', 'NoRidge')] <- 1
+all$nrich[all$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale')] <- 0
+
+all$nrich[all$Neighborhood %in% c('StoneBr', 'NridgHt', 'NoRidge')] <- 2
+all$nrich[!all$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale', 'StoneBr', 'NridgHt', 'NoRidge')] <- 1
+all$nrich[all$Neighborhood %in% c('MeadowV', 'IDOTRR', 'BrDale')] <- 0
+
+all$Neighborhood <- NULL
+
+table(all$nrich)
+```
+
+##Adding important feature: total basement square feet
+```{r}
+all$Bsmt1stFlr2ndFlrSF <- all$TotalBsmtSF + all$X1stFlrSF +all$X2ndFlrSF 
+```
+
+#Correlationship between SalePrice and Other Features
+
+##Most important variables among numeric variables
+```{r select_predictors, echo=FALSE}
+intval <- dplyr::select_if(all, is.numeric)
+intvalNames <- names(intval)
+length(intval)
+```
+
+##Numeric variables correlations with SalePrice.
+```{r correlations with saleprice, echo=FALSE}
+train_intval <- all[,intvalNames]
+cor_intval <- cor(train_intval, use="pairwise.complete.obs")
+
+cor_sort <- as.matrix(sort(cor_intval[,"SalePrice"], decreasing = TRUE))
+
+#find only highly correlated value
+hc <- names(which(apply(cor_sort,1,function(x) abs(x) > 0.5)))
+cor_intval <- cor_intval[hc, hc]
+
+corrplot.mixed(cor_intval, tl.col="black", tl.pos="lt")
+
+```
+
+
+#Model building and Testing 
+
+##Splitting train and test dataset for further evaluation
+```{r}
+training <- all[!is.na(all$SalePrice),]
+testing <- all[is.na(all$SalePrice),]
+
+```
+
+
+##Model 
+
+##lasso Model
+```{r}
+set.seed(27042018)
+(lasso_mod <- train(log(SalePrice) ~ ., 
+                   data = training,
+                   preProcess = c("center", "scale"),
+                     method = "glmnet",
+                   tuneGrid= expand.grid(
+                     alpha=1,
+                     lambda = seq(0,0.3, .1))))
+```
+
+
+
+
+```{r}
+set.seed(4800)
+tc = trainControl("repeatedcv", number = 10, repeats = 10)
+
+train(log(SalePrice) ~ GrLivArea + ExterQual + Bsmt1stFlr2ndFlrSF + YearBuilt + factor(OverallQual) + GarageArea * GarageCars + factor(nrich), training, method="lm", trControl = tc)
+```
+
+###Linear Regression
+```{r , echo=FALSE}
+#overallqual, yearbuilt,yearremodadd, totalbsmtsf,x1stflrsf,grlivarea,fullbath, totrmsabvgrd,garagecars, garagearea, neighborhood, garagefin
+
+# Start with the interim report linear model, seek to improve and test with allned variable 
+#summary(lm(log(SalePrice) ~ TotalBsmtSF + X1stFlrSF + GrLivArea + , train)) 
+# how can we improve the R^2 
+model3<- lm(log(SalePrice) ~ GrLivArea + ExterQual + Bsmt1stFlr2ndFlrSF + YearBuilt + factor(OverallQual) + GarageArea * GarageCars + factor(nrich), training)
+
+#This is my new model with better r^2. 
+
+  summary(model3)
+```
+
+```{r claculating rmse}
+rmse <- function (actual, fitted) sqrt(mean((actual-fitted) ^2))
+
+ 
+rmse(training$SalePrice, exp(fitted(model3))) 
+```
+
+
+
+```{r testing}
+
+predictions <- predict(lasso_mod, testing)
+
+
+sample_predictions <- data.frame(Id = testing$Id,
+                                 SalePrice = exp(predictions))
+
+summary(sample_predictions)
+
+all(complete.cases(sample_predictions))
+
+write.csv(sample_predictions, "prediction.csv")
+```
+
+```{r out-of-sample rmse}
+p <- read.csv("prediction.csv")
+summary(p)
+p$X <- NULL
+#Add SalePrice column from the prediction dataset to test dataset.
+testing$SalePrice <- p$SalePrice
+
+
+tc = trainControl("repeatedcv", number=10, repeats=10)
+set.seed(27042018)
+(lasso_test <- train(log(SalePrice) ~ ., 
+                   data = testing,
+                   preProcess = c("center", "scale"),
+                     method = "glmnet",
+                   tc,
+                   tuneGrid= expand.grid(
+                     alpha=1,
+                     lambda = seq(0,0.3, .1))))
+
+```
+
+
+

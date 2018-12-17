@@ -1,0 +1,545 @@
+---
+title: "IS_6489_Group_Project"
+author: "MINGYI HU, Sarah Bowers, HANSOL JEONG"
+date: "2018/11/3"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+###Load packages and import dataset.
+```{r Load the train data set and Library the packages, eval=FALSE, include=FALSE}
+library(tidyverse)
+library(magrittr)
+library(caret)
+library(car) 
+library(gpairs) 
+library(corrplot)
+library(gplots) 
+library(arm)
+library(broom) 
+library(leaps)
+library(readr)
+library(RColorBrewer)
+library(dplyr)
+library(ggrepel)
+```
+
+
+###Review datasets and find missing values
+```{r Review the Data}
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+head(train)
+summary(train)
+
+#List number of Null data of each predictors.
+
+apply(is.na(train),2,sum)
+#Create new dataset to store cleaned variables
+```
+
+
+###Clean the data
+```{r Clean dataset.}
+
+#Street
+train %>% group_by(Street) %>% summarize(mean(SalePrice))
+train$street <- ifelse(train$Street == "Pave", 1, 0)
+
+#Alley
+train %>% group_by(Alley) %>% summarize(mean(SalePrice))
+train$alley <- ifelse(train$Alley == "Pave",1,0)
+train$alley[is.na(train$Alley) == TRUE] <- 0
+
+#LotShape
+train$lotShape <- ifelse(train$LotShape == "Reg",1,0)
+
+#LandContour
+train$landContour <- ifelse(train$LandContour == "Lvl",1,0)
+
+#Utitlities
+train$utilities <- ifelse(train$Utilities == "AllPub",1,0)
+
+#LotConfig
+train %>% group_by(LotConfig) %>% summarize(mean(SalePrice))
+
+train$lotConfig[train$LotConfig == 'Corner'] <- 1
+train$lotConfig[train$LotConfig == 'CulDSac'] <- 2
+train$lotConfig[train$LotConfig == 'FR2'] <- 3
+train$lotConfig[train$LotConfig == 'FR3'] <- 4
+train$lotConfig[train$LotConfig == 'Inside'] <- 5
+```
+```{r, echo=FALSE}
+#LandSlope
+train$landSlope <- ifelse(train$LandSlope == "Gtl",1,0)
+
+#Neighborhood
+train %>% group_by(Neighborhood) %>% summarize(mean(SalePrice))
+
+nbhd_low <- train %>% group_by(Neighborhood) %>% filter(mean(SalePrice) < 140000)
+nbhd_med <- train %>% group_by(Neighborhood) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+nbhd_high <- train %>% group_by(Neighborhood) %>% filter(mean(SalePrice) >= 200000)
+
+train$neighborhood[train$Neighborhood %in% nbhd_low$Neighborhood] <- 1
+train$neighborhood[train$Neighborhood %in% nbhd_med$Neighborhood] <- 2
+train$neighborhood[train$Neighborhood %in% nbhd_high$Neighborhood] <- 3
+
+#Condition1 & 2
+train %>% group_by(Condition1) %>% summarize(mean(SalePrice))
+train %>% group_by(Condition2) %>% summarize(mean(SalePrice))
+
+train$condition1 <- ifelse(train$Condition1 == "PosA" | train$Condition1 == "PosN",1,0)
+train$condition2 <- ifelse(train$Condition2 == "PosA" | train$Condition2 == "PosN",1,0)
+
+train %>% group_by(BldgType) %>% summarize(mean(SalePrice))
+train$bldgType[train$BldgType == "1Fam"] <- 1
+train$bldgType[train$BldgType == "2fmCon"] <- 2
+train$bldgType[train$BldgType == "Duplex"] <- 3
+train$bldgType[train$BldgType == "TwnhsE"] <- 4
+train$bldgType[train$BldgType == "Twnhs"] <- 5
+
+train %>% group_by(HouseStyle) %>% summarize(mean(SalePrice))
+
+hs_low <- train %>% group_by(HouseStyle) %>% filter(mean(SalePrice) < 140000)
+hs_med <- train %>% group_by(HouseStyle) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+hs_high <- train %>% group_by(HouseStyle) %>% filter(mean(SalePrice) >= 200000)
+
+train$houseStyle[train$HouseStyle %in% hs_low$HouseStyle] <- 1
+train$houseStyle[train$HouseStyle %in% hs_med$HouseStyle] <- 2
+train$houseStyle[train$HouseStyle %in% hs_high$HouseStyle] <- 3
+
+train %>% group_by(RoofStyle) %>% summarize(mean(SalePrice))
+
+train$roofStyle <- ifelse(train$RoofStyle == "Hip" | train$RoofStyle == "Shed",1,0)
+
+train %>% group_by(RoofMatl) %>% summarize(mean(SalePrice))
+
+roofmatl_low <- train %>% group_by(RoofMatl) %>% filter(mean(SalePrice) < 140000)
+roofmatl_med <- train %>% group_by(RoofMatl) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+roofmatl_high <- train %>% group_by(RoofMatl) %>% filter(mean(SalePrice) >= 200000)
+
+train$roofMatl[train$RoofMatl %in% roofmatl_low$RoofMatl] <- 1
+train$roofMatl[train$RoofMatl %in% roofmatl_med$RoofMatl] <- 2
+train$roofMatl[train$RoofMatl %in% roofmatl_high$RoofMatl] <- 3
+```
+
+```{r, exterior,echo=FALSE}
+train %>% group_by(Exterior1st) %>% summarize(mean(SalePrice))
+
+ext1_low <- train %>% group_by(Exterior1st) %>% filter(mean(SalePrice) < 140000)
+ext1_med <- train %>% group_by(Exterior1st) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+ext1_high <- train %>% group_by(Exterior1st) %>% filter(mean(SalePrice) >= 200000)
+
+train$exterior1st[train$Exterior1st %in% ext1_low$Exterior1st] <- 1
+train$exterior1st[train$Exterior1st %in% ext1_med$Exterior1st] <- 2
+train$exterior1st[train$Exterior1st %in% ext1_high$Exterior1st] <- 3
+
+train %>% group_by(Exterior2nd) %>% summarize(mean(SalePrice))
+
+ext2_low <- train %>% group_by(Exterior2nd) %>% filter(mean(SalePrice) < 140000)
+ext2_med <- train %>% group_by(Exterior2nd) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+ext2_high <- train %>% group_by(Exterior2nd) %>% filter(mean(SalePrice) >= 200000)
+
+train$exterior2nd[train$Exterior2nd %in% ext2_low$Exterior2nd] <- 1
+train$exterior2nd[train$Exterior2nd %in% ext2_med$Exterior2nd] <- 2
+train$exterior2nd[train$Exterior2nd %in% ext2_high$Exterior2nd] <- 3
+
+train %>% group_by(MasVnrType) %>% summarize(mean(SalePrice))
+
+train$masVnrType[train$MasVnrType %in% c("Stone","BrkFace") | is.na(train$MasVnrType)] <- 1
+train$masVnrType[!train$MasVnrType %in% c("Stone","BrkFace") & !is.na(train$MasVnrType)] <- 0
+
+train %>% group_by(ExterQual) %>% summarize(mean(SalePrice))
+
+train$exterQual[train$ExterQual == "Ex"] <- 1
+train$exterQual[train$ExterQual == "Gd"] <- 2
+train$exterQual[train$ExterQual == "TA"] <- 3
+train$exterQual[train$ExterQual == "Fa"] <- 4
+
+train %>% group_by(ExterCond) %>% summarize(mean(SalePrice))
+
+train$exterCond[train$ExterCond == "Ex"] <- 1
+train$exterCond[train$ExterCond == "Gd"] <- 3
+train$exterCond[train$ExterCond == "TA"] <- 2
+train$exterCond[train$ExterCond == "Fa"] <- 4
+train$exterCond[train$ExterCond == "Po"] <- 5
+```
+
+
+
+```{r, echo=FALSE }
+train %>% group_by(Foundation) %>% summarize(mean(SalePrice)) 
+
+found_low <- train %>% group_by(Foundation) %>% filter(mean(SalePrice) < 140000)
+found_med <- train %>% group_by(Foundation) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+found_high <- train %>% group_by(Foundation) %>% filter(mean(SalePrice) >= 200000)
+
+train$foundation[train$Foundation %in% found_low$Foundation] <- 1
+train$foundation[train$Foundation %in% found_med$Foundation] <- 2
+train$foundation[train$Foundation %in% found_high$Foundation] <- 3
+```
+
+```{r, basement, echo=FALSE}
+train %>% group_by(BsmtQual) %>% summarize(mean(SalePrice))
+
+train$bsmtQual[train$BsmtQual == "Ex"] <- 1
+train$bsmtQual[train$BsmtQual == "Gd"] <- 2
+train$bsmtQual[train$BsmtQual == "TA"] <- 3
+train$bsmtQual[train$BsmtQual == "Fa"] <- 4
+train$bsmtQual[is.na(train$BsmtQual) == TRUE] <- 5
+
+train %>% group_by(BsmtCond) %>% summarize(mean(SalePrice))
+
+train$bsmtCond[train$BsmtCond == "Gd"] <- 1
+train$bsmtCond[train$BsmtCond == "TA"] <- 2
+train$bsmtCond[train$BsmtCond == "Fa"] <- 3
+train$bsmtCond[is.na(train$BsmtCond) == TRUE] <- 4
+train$bsmtCond[train$BsmtCond == "Po"] <- 5
+
+train %>% group_by(BsmtExposure) %>% summarize(mean(SalePrice))
+
+train$bsmtExposure[train$BsmtExposure == "Gd"] <- 1
+train$bsmtExposure[train$BsmtExposure == "Av"] <- 2
+train$bsmtExposure[train$BsmtExposure == "Mn"] <- 3
+train$bsmtExposure[is.na(train$BsmtExposure) == TRUE] <- 5
+train$bsmtExposure[train$BsmtExposure == "No"] <- 4
+
+train %>% group_by(BsmtFinType1) %>% summarize(mean(SalePrice))
+
+train$bsmtFinType1[train$BsmtFinType1 == "GLQ"] <- 1
+train$bsmtFinType1[train$BsmtFinType1 == "Unf"] <- 2
+train$bsmtFinType1[train$BsmtFinType1 == "ALQ"] <- 3
+train$bsmtFinType1[train$BsmtFinType1 == "LwQ"] <- 4
+train$bsmtFinType1[train$BsmtFinType1 == "BLQ"] <- 5
+train$bsmtFinType1[train$BsmtFinType1 == "Rec"] <- 6
+train$bsmtFinType1[is.na(train$BsmtFinType1) == TRUE] <- 7
+
+train %>% group_by(BsmtFinType2) %>% summarize(mean(SalePrice))
+
+train$bsmtFinType2[train$BsmtFinType2 == "ALQ"] <- 1
+train$bsmtFinType2[train$BsmtFinType2 == "Unf"] <- 2
+train$bsmtFinType2[train$BsmtFinType2 == "GLQ"] <- 3
+train$bsmtFinType2[train$BsmtFinType2 == "Rec"] <- 4
+train$bsmtFinType2[train$BsmtFinType2 == "LwQ"] <- 5
+train$bsmtFinType2[train$BsmtFinType2 == "BLQ"] <- 6
+train$bsmtFinType2[is.na(train$BsmtFinType2) == TRUE] <- 7
+```
+
+
+```{r, echo=FALSE}
+train %>% group_by(Heating) %>% summarize(mean(SalePrice))
+
+train$heating[train$Heating == "GasA"] <- 1
+train$heating[train$Heating == "GasW"] <- 2
+train$heating[train$Heating == "OthW"] <- 3
+train$heating[train$Heating == "Wall"] <- 4
+train$heating[train$Heating == "Grav"] <- 5
+train$heating[train$Heating == "Floor"] <- 6
+
+train %>% group_by(HeatingQC) %>% summarize(mean(SalePrice))
+
+train$heatingQC[train$HeatingQC == "Ex"] <- 1
+train$heatingQC[train$HeatingQC == "Gd"] <- 2
+train$heatingQC[train$HeatingQC == "TA"] <- 3
+train$heatingQC[train$HeatingQC == "Fa"] <- 4
+train$heatingQC[train$HeatingQC == "Po"] <- 5
+```
+
+```{r, utilities, echo=FALSE}
+train$centralAir <- ifelse(train$CentralAir == "Y", 1, 0)
+
+train %>% group_by(Electrical) %>% summarize(mean(SalePrice))
+
+train$electrical <- ifelse(train$Electrical == "SBrkr" | is.na(train$Electrical) == TRUE,1,0)
+```
+
+
+```{r, accomodation, echo=FALSE}
+train %>% group_by(KitchenQual) %>% summarize(mean(SalePrice))
+
+train$kitchenQual[train$KitchenQual == "Ex"] <- 1
+train$kitchenQual[train$KitchenQual == "Gd"] <- 2
+train$kitchenQual[train$KitchenQual == "TA"] <- 3
+train$kitchenQual[train$KitchenQual == "Fa"] <- 4
+
+train %>% group_by(Functional) %>% summarize(mean(SalePrice))
+
+train$functional <- ifelse(train$Functional == "Typ" | train$Functional == "Mod",1,0)
+
+train %>% group_by(FireplaceQu) %>% summarize(mean(SalePrice))
+
+train$fireplaceQu[train$FireplaceQu == "Ex"] <- 1
+train$fireplaceQu[train$FireplaceQu == "Gd"] <- 2
+train$fireplaceQu[train$FireplaceQu == "TA"] <- 3
+train$fireplaceQu[train$FireplaceQu == "Fa"] <- 4
+train$fireplaceQu[is.na(train$FireplaceQu) == TRUE] <- 5
+train$fireplaceQu[train$FireplaceQu == "Po"] <- 6
+```
+
+
+```{r, echo=FALSE}
+train %>% group_by(GarageType) %>% summarize(mean(SalePrice))
+
+train$garageType <- ifelse(train$GarageType == "Attchd" | train$GarageType == "BuiltIn",1,0)
+train$garageType[is.na(train$GarageType) == TRUE] <- 0
+
+train %>% group_by(GarageFinish) %>% summarize(mean(SalePrice))
+
+train$garageFin[!train$GarageFinish %in% c("Fin","RFn")] <- 0
+train$garageFin[train$GarageFinish %in% c("Fin","RFn")] <- 1
+
+train %>% group_by(GarageQual) %>% summarize(mean(SalePrice))
+
+train$garageQual[train$GarageQual == "Ex"] <- 1
+train$garageQual[train$GarageQual == "Gd"] <- 2
+train$garageQual[train$GarageQual == "TA"] <- 3
+train$garageQual[train$GarageQual == "Fa"] <- 4
+train$garageQual[is.na(train$GarageQual) == TRUE] <- 5
+train$garageQual[train$GarageQual == "Po"] <- 6
+
+train %>% group_by(GarageCond) %>% summarize(mean(SalePrice))
+
+train$garageCond[train$GarageCond == "TA"] <- 1
+train$garageCond[train$GarageCond == "Gd"] <- 2
+train$garageCond[train$GarageCond == "Ex"] <- 3
+train$garageCond[train$GarageCond == "Fa"] <- 4
+train$garageCond[train$GarageCond == "Po"] <- 5
+train$garageCond[is.na(train$GarageCond)] <- 6
+```
+
+
+```{r, echo=FALSE}
+train %>% group_by(PavedDrive) %>% summarize(mean(SalePrice))
+
+train$pavedDrive <- ifelse(train$PavedDrive == "Y",1,0)
+
+train %>% group_by(PoolQC) %>% summarize(mean(SalePrice))
+
+train$poolQC[train$PoolQC == "Ex"] <- 1
+train$poolQC[train$PoolQC == "Fa"] <- 2
+train$poolQC[train$PoolQC == "Gd"] <- 3
+train$poolQC[is.na(train$PoolQC) == TRUE] <- 4
+
+train %>% group_by(Fence) %>% summarize(mean(SalePrice))
+
+train$fence <- ifelse(train$Fence == "GdPrv",1,0)
+train$fence[is.na(train$Fence) == TRUE] <- 0
+
+train %>% group_by(MiscFeature) %>% summarize(mean(SalePrice))
+```
+
+
+```{r, sale, echo=FALSE}
+train %>% group_by(SaleType) %>% summarize(mean(SalePrice))
+
+st_low <- train %>% group_by(SaleType) %>% filter(mean(SalePrice) < 140000)
+st_med <- train %>% group_by(SaleType) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+st_high <- train %>% group_by(SaleType) %>% filter(mean(SalePrice) >= 200000)
+
+train$saleType[train$SaleType %in% st_low$SaleType] <- 1
+train$saleType[train$SaleType %in% st_med$SaleType] <- 2
+train$saleType[train$SaleType %in% st_high$SaleType] <- 3
+
+train %>% group_by(SaleCondition) %>% summarize(mean(SalePrice))
+
+sc_low <- train %>% group_by(SaleCondition) %>% filter(mean(SalePrice) < 140000)
+sc_med <- train %>% group_by(SaleCondition) %>% filter(mean(SalePrice) >= 140000 & mean(SalePrice) < 200000)
+sc_high <- train %>% group_by(SaleCondition) %>% filter(mean(SalePrice) >= 200000)
+
+train$saleCondition[train$SaleCondition %in% sc_low$SaleCondition] <- 1
+train$saleCondition[train$SaleCondition %in% sc_med$SaleCondition] <- 2
+train$saleCondition[train$SaleCondition %in% sc_high$SaleCondition] <- 3
+
+train$mSZoning[train$MSZoning %in% c("FV")] <- 4
+train$mSZoning[train$MSZoning %in% c("RL")] <- 3
+train$mSZoning[train$MSZoning %in% c("RH","RM")] <- 2
+train$mSZoning[train$MSZoning %in% c("C (all)")] <- 1
+```
+
+```{r, clean_data, echo=FALSE}
+#Delete columns that converted into numeric
+train$Street <- NULL
+train$Alley <- NULL
+train$LotShape <- NULL
+train$LandContour <- NULL
+train$Utilities <- NULL
+train$LotConfig <- NULL
+train$LandSlope <- NULL
+train$Neighborhood <- NULL
+train$Condition1 <- NULL
+train$Condition2 <- NULL
+train$BldgType <- NULL
+train$HouseStyle <- NULL
+train$RoofStyle <- NULL
+train$RoofMatl <- NULL
+train$Exterior1st <- NULL
+train$Exterior2nd <- NULL
+train$MasVnrType <- NULL
+train$ExterCond <-NULL
+train$Foundation <- NULL
+train$BsmtQual <- NULL
+train$BsmtCond <- NULL
+train$BsmtExposure <- NULL
+train$BsmtFinType1 <- NULL
+train$BsmtFinType2 <- NULL
+train$Heating <- NULL
+train$HeatingQC <- NULL
+train$CentralAir <- NULL
+train$Electrical <-NULL
+train$KitchenQual <- NULL
+train$Functional <- NULL
+train$FireplaceQu <- NULL
+train$GarageType <- NULL
+train$GarageFinish <- NULL
+train$GarageQual <- NULL
+train$GarageCond <- NULL
+train$PavedDrive <- NULL
+train$PoolQC <- NULL
+train$Fence <- NULL
+train$SaleType <- NULL
+train$SaleCondition <- NULL
+train$MSZoning <- NULL
+train$ExterQual <- NULL
+train$MiscFeature <- NULL
+
+```
+
+###Correlation Analysis
+```{r find_predictors, echo=FALSE}
+#Find which variables are the most suitable predictors for sale price with the new dataset.
+cor <- cor(train[,c(2:20,38)], use="everything")
+corrplot(cor, method="number", type="lower", sig.level=0.05, insig="blank", number.cex = .5)
+
+cor1 <- cor(train[,c(21:37,38)], use="everything")
+corrplot(cor1,  method="number", type="lower", sig.level=0.05, insig="blank", number.cex = .5)
+
+cor2 <- cor(train[,c(39:49,38)], use="everything")
+corrplot(cor2,  method="number", type="lower", sig.level=0.05, insig="blank", number.cex = .5)
+
+cor3 <- cor(train[,c(50:65,38)], use="everything")
+corrplot(cor3,  method="number", type="lower", sig.level=0.05, insig="blank", number.cex = .5)
+
+cor4 <- cor(train[,c(66:80,38)], use="everything")
+corrplot(cor4,  method="number", type="lower", sig.level=0.05, insig="blank", number.cex = .5)
+
+
+```
+
+overallqual, yearbuilt,yearremodadd, totalbsmtsf,x1stflrsf,grlivarea,fullbath, totrmsabvgrd,garagecars, garagearea, neighborhood, garagefin
+
+###Compute linear model with five variables
+```{r LM model, echo=FALSE}
+unlogged <- lm(SalePrice ~ Neighborhood + YearBuilt + GrLivArea + factor(OverallCond) + factor(OverallQual), train)
+log <- lm(log(SalePrice) ~ Neighborhood + YearBuilt + GrLivArea + factor(OverallCond) + factor(OverallQual), train)
+m1 <- lm(log(SalePrice) ~ Neighborhood * YearBuilt + GrLivArea + factor(OverallCond) + factor(OverallQual), train)
+display(unlogged)
+display(m1)
+```
+>Logged one has a higher r squared than the unlogged one.
+
+
+###Compute linear model for all.
+```{r, lm_for_all, echo=FALSE}
+hp_all <- lm(log(SalePrice) ~ ., train)
+display(hp_all)
+
+
+
+```
+
+
+
+###Residual vs fitted plot
+```{r residual_plot, echo=FALSE}
+plot(unlogged, which = 1)
+plot(log, which = 1)
+```
+
+##Data Visualiization with Predictors
+```{r ggplot}
+#OverallQual vs SalePrice
+ggplot(train, aes(x=factor(OverallQual), y=SalePrice))+
+        geom_boxplot() + labs(x='Overall Quality') +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000)) +
+  theme_minimal()
+
+#YearBuilt vs. SalePrice
+ggplot(train, aes(YearBuilt, log(SalePrice))) + 
+   geom_point(size=1, aes(color=Neighborhood))+
+  stat_smooth(method= "lm") + 
+  labs(title="SalePrice vs. YearBuilt, color by Neighborhood") +
+  theme_minimal()
+  
+#SalePrice vs GrLivArea
+ggplot(train, aes(x=GrLivArea, y=SalePrice))+
+        geom_point(col='blue') + geom_smooth(method = "lm", se=FALSE, color="black", aes(group=1)) +
+        scale_y_continuous(breaks= seq(0, 800000, by=100000)) +
+        geom_text_repel(aes(label = ifelse(train$GrLivArea >4500, rownames(train), '')))
+
+#OverallCond vs. SalePrice
+ggplot(train, aes(factor(OverallCond), SalePrice)) + 
+  geom_boxplot()+ 
+  labs(title="SalePrice Vs. OvaerllCond, Color by OveralCon") +
+  scale_x_continuous(breaks=seq(0,800000, by=100000))
+
+ggplot(subset(train, YearBuilt >= 2000), aes(YearBuilt, log(SalePrice), col = Neighborhood)) +
+  geom_point() +
+  stat_smooth(method= "lm", se = F) 
+
+```
+
+
+###Calculate RMSE
+```{r RMSE}
+rmse <- function (actual, fitted) sqrt(mean((actual-fitted) ^2))
+ 
+rmse(train$SalePrice, fitted(unlogged))
+ 
+rmse(train$SalePrice, exp(fitted(m1))) 
+
+```
+>RMSE for unlogged on has the better RMSE than the logged one. We will use the unlogged one to get prediction.
+
+
+###Get Kaggle score by predicting sale price from unlogged linear model.
+```{r kaggle_score, echo=FALSE}
+predictions <- predict(m1,test)#Create predictoin model for missing SalePrice column in test dataset.
+head(predictions)
+tail(predictions)
+
+summary(predictions)
+
+sample <- read.csv("sample_submission.csv")
+sample_predictions <- data.frame(Id = test$Id,
+                                 SalePrice = predictions * 1000)
+
+head(sample_predictions)
+all(complete.cases(sample_predictions))
+
+write.csv(sample_predictions, "sample_predictions.csv")
+
+```
+
+
+###RMSE for Test Dataset
+Predicted sale price in test dataset is very accurate.
+```{r rmse_test_dataset, echo=FALSE}
+
+samplep <- read.csv("sample_predictions.csv")
+summary(samplep)
+samplep$X <- NULL
+#Add SalePrice column from the prediction dataset to test dataset.
+test$SalePrice <- samplep$SalePrice
+
+#Linear Model for test Dataset
+#test_lm <- lm(log(SalePrice) ~ Neighborhood + GarageArea + GrLivArea + GarageCars + factor(OverallQual), test)
+test_lm <- lm(log(SalePrice) ~ Neighborhood * YearBuilt + GrLivArea + factor(OverallCond) + factor(OverallQual), test)
+summary(test_lm)
+
+#Calculate RMSE for test dataset.
+rmse(test$SalePrice, exp(fitted(test_lm)))
+
+```
+
+

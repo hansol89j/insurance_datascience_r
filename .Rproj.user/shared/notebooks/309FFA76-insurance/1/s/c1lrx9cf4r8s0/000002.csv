@@ -1,0 +1,1 @@
+"0","cat1 <- insurance %>% filter(smoker == ""yes"" & children == 0 & bmi < 30)"

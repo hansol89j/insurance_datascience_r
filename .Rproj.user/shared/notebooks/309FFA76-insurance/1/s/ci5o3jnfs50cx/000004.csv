@@ -1,0 +1,2 @@
+"0","predcharges <- predict(insurance)"
+"0","datatable(predcharges, colnames = c('Age', 'Sex', 'BMI', 'Children', 'Smoker', 'Region', 'Charges', 'Charges Prediction'))"
